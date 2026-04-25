@@ -1,6 +1,8 @@
 import pg from 'pg'
 const { Client } = pg
  
+// Keep one shared database connection for the server process so route handlers
+// can focus on data logic instead of connection management.
 const client = new Client({
   host: process.env.POSTGRES_HOST,
   port: Number(process.env.POSTGRES_PORT),
@@ -17,6 +19,7 @@ client.connect()
 export const query = async (text, values) => {
     try{
         const now = new Date()
+        // Log the SQL text and elapsed time to make backend behavior easier to trace during demos.
         console.log("query to be executed:", text)
         const res = await client.query(text, values)
         const now2 = new Date()
