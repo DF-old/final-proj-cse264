@@ -3,7 +3,7 @@ import cors from 'cors'
 import 'dotenv/config'
 
 
-import { query } from './db/postgres.js';
+import { userRoutes, eventRoutes, configRoutes } from './routes/routes.js'
 
 // create the app
 const app = express()
@@ -14,9 +14,13 @@ app.use(express.json())
 // set up some midlleware to handle cors
 app.use(cors())
 
+userRoutes(app)
+eventRoutes(app)
+configRoutes(app)
+
 // base route
 app.get('/', (req, res) => {
-    res.send("Welcome to the Job Application Tracker API!!!")
+    res.send("Welcome to the Backend API!!!")
 })
 
 
