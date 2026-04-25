@@ -13,7 +13,7 @@ export function adaptMoviesToCards(movies: MovieRecord[], options: MovieCardOpti
   const selectedMovies = typeof limit === 'number' ? orderedMovies.slice(0, limit) : orderedMovies;
 
   return selectedMovies.map((movie) => {
-    const offerProviders = [...new Set(movie.offers.map((offer) => offer.name))];
+    const offerProviders = [...new Set(movie.offers.map((offer: { name: any; }) => offer.name))];
     const availability = offerProviders.slice(0, 4).join(', ');
 
     return {
