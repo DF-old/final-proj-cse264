@@ -11,12 +11,14 @@ const configTable = process.env.CONFIG_TABLE;          // title=sentinel '__conf
 const scrypt = promisify(crypto.scrypt);
 const HASH_PREFIX = 'scrypt$';
 
+// Password hashing and verification use scrypt with a random salt. The hash is stored
 const hashPassword = async (password) => {
   const salt = crypto.randomBytes(16).toString('hex');
   const derived = await scrypt(password, salt, 64);
   return `${HASH_PREFIX}${salt}$${derived.toString('hex')}`;
 };
 
+// verifies a password against the stored hash, returning a boolean result
 const verifyPassword = async (password, storedValue) => {
   if (!storedValue) return false;
 
