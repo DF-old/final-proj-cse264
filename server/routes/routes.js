@@ -1,15 +1,41 @@
+import crypto from 'node:crypto';
+import { promisify } from 'node:util';
 import { query } from '../db/postgres.js';
 
+// These table names reuse the provided schema, but the app treats them as
+// separate stores for users, events, and per-user config.
 const userTable = process.env.USER_TABLE;        // title=username, body=hashed password
 const eventTable = process.env.EVENT_TABLE; // company=userId, position=title, notes=JSON, status='event'
 const configTable = process.env.CONFIG_TABLE;          // title=sentinel '__config__:{userId}', body=JSON
+
+const scrypt = promisify(crypto.scrypt);
+const HASH_PREFIX = 'scrypt$';
+
+const hashPassword = async (password) => {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = await scrypt(password, salt, 64);
+  return `${HASH_PREFIX}${salt}$${derived.toString('hex')}`;
+};
+
+const verifyPassword = async (password, storedValue) => {
+  if (!storedValue) return false;
+
+  const [, salt, storedHash] = storedValue.split('$');
+  if (!salt || !storedHash) return false;
+
+  const derived = await scrypt(password, salt, 64);
+  const storedBuffer = Buffer.from(storedHash, 'hex');
+  const derivedBuffer = Buffer.from(derived);
+  if (storedBuffer.length !== derivedBuffer.length) return false;
+  return crypto.timingSafeEqual(storedBuffer, derivedBuffer);
+};
 
 const formatDateString = (value) => {
   const date = value ? new Date(value) : new Date();
   return date.toISOString().split('T')[0];
 };
 
-// ─── User routes ─────────────────────────────────────────────────────────────
+// User routes 
 
 const userRoutes = (app) => {
 
@@ -26,9 +52,12 @@ const userRoutes = (app) => {
       if (existing.rowCount > 0)
         return res.status(400).json({ message: 'Username already taken.' });
 
+      const hashedPassword = await hashPassword(password);
+
+      // Registration stores a password hash
       const result = await query(
         `INSERT INTO ${userTable} (title, body) VALUES ($1, $2) RETURNING review_id`,
-        [username, password]
+        [username, hashedPassword]
       );
       res.status(201).json({
         id: String(result.rows[0].review_id),
@@ -45,13 +74,19 @@ const userRoutes = (app) => {
         return res.status(400).json({ message: 'Username and password are required' });
 
       const data = await query(
-        `SELECT * FROM ${userTable} WHERE title = $1 AND body = $2`,
-        [username, password]
+        `SELECT * FROM ${userTable} WHERE title = $1`,
+        [username]
       );
       if (data.rowCount === 0)
         return res.status(404).json({ message: 'No account found with that username or email.' });
 
       const row = data.rows[0];
+      const valid = await verifyPassword(password, row.body);
+      if (!valid)
+        return res.status(401).json({ message: 'Incorrect password.' });
+
+      // The backend returns a minimal auth payload here; the client merges in
+      // config data from a separate request to build the full session object.
       res.json({
         id: String(row.review_id),
         username: row.title,
@@ -68,15 +103,21 @@ const userRoutes = (app) => {
         return res.status(400).json({ message: 'username, oldPassword, and newPassword are required' });
 
       const check = await query(
-        `SELECT 1 FROM ${userTable} WHERE title = $1 AND body = $2`,
-        [username, oldPassword]
+        `SELECT * FROM ${userTable} WHERE title = $1`,
+        [username]
       );
       if (check.rowCount === 0)
         return res.status(401).json({ message: 'Incorrect password.' });
 
+      const row = check.rows[0];
+      const valid = await verifyPassword(oldPassword, row.body);
+      if (!valid)
+        return res.status(401).json({ message: 'Incorrect password.' });
+
+      const hashedNewPassword = await hashPassword(newPassword);
       await query(
         `UPDATE ${userTable} SET body = $1 WHERE title = $2`,
-        [newPassword, username]
+        [hashedNewPassword, username]
       );
       res.status(200).json({ message: 'Password updated successfully' });
     } catch (err) { next(err); }
@@ -98,6 +139,8 @@ const eventRoutes = (app) => {
         return res.status(400).json({ message: 'userId and title are required' });
 
       const eventDate = date || formatDateString();
+      // Extra event fields are stored as JSON so the frontend can round-trip
+      // the full draft without needing a separate table per field.
       const notes = JSON.stringify({ date: eventDate, ...rest });
 
       const result = await query(
@@ -123,6 +166,8 @@ const eventRoutes = (app) => {
          ORDER BY applied_on ASC, id ASC`,
         [userId]
       );
+      // Map the database row into the shape the client expects, including the
+      // JSON payload that was packed into the notes column.
       res.json(data.rows.map(mapEventRow));
     } catch (err) { next(err); }
   });
@@ -150,6 +195,8 @@ const eventRoutes = (app) => {
         return res.status(400).json({ message: 'userId and title are required' });
 
       const eventDate = date || formatDateString();
+      // Updates use the same storage format as creation so the event can be
+      // edited without changing the client-facing data contract.
       const notes = JSON.stringify({ date: eventDate, ...rest });
 
       const result = await query(
@@ -200,6 +247,8 @@ const configRoutes = (app) => {
       if (data.rowCount === 0)
         return res.json({});
 
+      // Each config row is stored as JSON text, then parsed back into the
+      // client session shape.
       try { res.json(JSON.parse(data.rows[0].body)); }
       catch { res.json({}); }
     } catch (err) { next(err); }
@@ -215,7 +264,8 @@ const configRoutes = (app) => {
       const sentinelTitle = `__config__:${userId}`;
       const payload = JSON.stringify(req.body);
 
-      // Delete any existing row, then insert fresh
+      // Replace the existing config row so the app always keeps one current
+      // record per user instead of managing partial updates.
       await query(
         `DELETE FROM ${configTable} WHERE title = $1`,
         [sentinelTitle]
@@ -234,6 +284,8 @@ const configRoutes = (app) => {
 const mapEventRow = (row) => {
   let extras = {};
   try { extras = JSON.parse(row.notes || '{}'); } catch { /* ignore */ }
+  // The client works with a normalized event draft, so the server unwraps the
+  // JSON blob and returns a flatter object.
   return {
     id: String(row.id),
     userId: row.company,
