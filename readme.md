@@ -135,12 +135,15 @@
 
 ## API Keys & Database Setup
 - **Server `.env`**
-  - `POSTGRES_USERNAME`
+  - `POSTGRES_USERNAME=you`
   - `POSTGRES_PASSWORD`
   - `POSTGRES_HOST=cse264.cru8ico68j35.us-east-1.rds.amazonaws.com`
   - `POSTGRES_PORT=5432`
   - `POSTGRES_DBNAME=cse264`
   - `PORT=3000`
+  - `USER_TABLE=reviews_you`
+  - `EVENT_TABLE=applicationtracker_you`
+  - `CONFIG_TABLE=films_you`
 
 - **Client `.env`**
   - `VITE_API_URL=http://localhost:3000`
