@@ -43,7 +43,7 @@
 - **User accounts and roles:** implemented through the auth flow and free/premium access control.
 - **Database:** PostgreSQL stores users, events, and per-user configuration.
 - **Interactive UI:** the event builder includes forms, filtering, searching, attaching cards, and export actions.
-- **New technology:** Tailwind CSS 4 and Lucide React extend the classroom stack.
+- **New technology:** Tailwind CSS 4 and Lucide React.
 - **Internal REST API:** the Express server exposes dedicated routes for auth, events, and config.
 - **External API use:** the app enriches events with real data from public APIs.
 
@@ -82,9 +82,9 @@
 
 ### Why the backend uses separate SQL tables for auth, events, and config
 - The project uses three existing PostgreSQL tables as lightweight storage layers for different concerns:
-  - `reviews_del226` for users and passwords
-  - `applicationtracker_del226` for events
-  - `films_del226` for per-user configuration
+  - `reviews_you` for users and passwords
+  - `applicationtracker_you` for events
+  - `films_you` for per-user configuration
 - This choice keeps the backend simple while still satisfying the database requirement.
 - Auth is intentionally mocked rather than fully secure production auth, because the goal of the project is to demonstrate full-stack data flow, role-based behavior, and persistence.
 - User configuration is stored separately from the core user record so the app can update tier/integration settings without rewriting the user row.
@@ -116,7 +116,7 @@
 - The app imports the API base once and reuses it in each fetch call, which keeps the code consistent and easy to maintain.
 
 ### Client-side data flow
-- `AuthProvider` loads the session from `localStorage` and rehydrates the signed-in user on refresh.
+- `AuthProvider` loads the session from `localStorage` and uses the signed-in user on refresh.
 - Login fetches the base user object from the backend, then fetches `/config` and merges the results into one user state object.
 - Registration creates the user, writes default config for that user, and then immediately logs the user in.
 - Upgrading to premium updates the config endpoint and then updates the local session state.
