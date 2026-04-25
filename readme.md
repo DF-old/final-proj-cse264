@@ -1,50 +1,148 @@
-# CSE264 Final Project: Full Stack
-## Due: Friday, May 2, 2025 at 11:59 PM
-## Add your full name and Lehigh email address to this README!
+# Project Document Draft
 
+## Project Name
+- **Event Planner**
 
-This repo contains the boilerplate code for a full stack application using Express and React.  If you need a database table, please let your instructor know.
+## Team Members & Roles
+- **Denny Li** [del226@lehigh.edu](mailto:del226@lehigh.edu) Database / Auth / Cards
+- **Truc Linh Ho** [tth227@lehigh.edu](mailto:tth227@lehigh.edu) API Integration
+- **Neirah Ho** [neh226@lehigh.edu](mailto:neh226@lehigh.edu) Frontend/UI
 
-### Project Requirements
-Your web application should have/do the following:
+## Application Functionality
+- Users can register, log in, and stay signed in with a local session.
+- The app uses a meaningful role distinction between **free** and **premium** users.
+- The app stores and retrieves users, events, and configuration data from PostgreSQL through an Express API.
+- Users can create, edit, view, and delete events.
+- Each event can include a title, date, time, location, notes, category, and attached insight cards.
+- The app fetches live data from external services and converts it into a standard card format for display.
+- Free users get weather, holiday, and venue/location features.
+- Premium users unlock additional sports and movie integrations.
+- Users can export events as an `.ics` file or copy event details to the clipboard.
+- The interface is interactive and dynamic, with forms, card search, attach/detach actions, and save feedback.
 
-Your web application must include the following:
-* User Accounts & Roles: Implement different user roles such as user/admin, free/paid, etc.
-* Database: Your application must store and retrieve data from a database of your choice.
-* Interactive UI: Your web app must have an interactive user interface, which can include forms, real-time updates, animations, or other dynamic elements.
-* New Library or Framework: You must use at least one library or framework that was not covered in class.
-* Internal REST API: Your project must have an API layer used to store and retrieve data
-* External REST API: You may include an external REST API (e.g., Reddit API, Spotify API, OpenWeather API, etc.).
+## User Story / Use Case
+- A user opens the app, registers or logs in, and lands on the dashboard.
+- From there, they create a new event and enter details such as the date, time, and location.
+- The app suggests relevant cards such as weather, holiday, and venue information.
+- If the user has premium access, they can also pull in sports scores and movie suggestions.
+- The user attaches the cards that help with planning, saves the event, and returns later to edit or delete it.
+- When finished, the user exports the event to a calendar file or copies the event details for sharing.
 
+## Technical Design
+- **Frontend:** React, TypeScript, Vite
+- **Styling / UI:** Tailwind CSS 4, Lucide React icons
+- **Backend:** Node.js, Express
+- **Database:** PostgreSQL
+- **State / Auth:** custom auth context with `localStorage` session handling
+- **Internal REST API:** `/users`, `/users/login`, `/events`, `/config`
+- **External REST APIs:** Open-Meteo, weather.gov, Nominatim / OpenStreetMap, Nager.Date, IMDb / JustWatch
+- **New library / framework:** Tailwind CSS 4 and Lucide React
+- **Architecture summary:** the React frontend talks to an Express API, which reads and writes PostgreSQL data. The frontend also calls public APIs, transforms those responses into standardized cards, and attaches them to events.
 
-### Installation and Running the Project
+## Application Requirements Mapping
+- **User accounts and roles:** implemented through the auth flow and free/premium access control.
+- **Database:** PostgreSQL stores users, events, and per-user configuration.
+- **Interactive UI:** the event builder includes forms, filtering, searching, attaching cards, and export actions.
+- **New technology:** Tailwind CSS 4 and Lucide React extend the classroom stack.
+- **Internal REST API:** the Express server exposes dedicated routes for auth, events, and config.
+- **External API use:** the app enriches events with real data from public APIs.
 
-#### Client
-The client for this project uses React + Vite template which provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Presentation Questions
 
-You must have node.js running on your machine. Once you have cloned this project you can run `npm install` to install all the packages for this project. Then running `npm run dev` will run the dev version of this code, which will run this project on localhost:5173 (or at the location specified in the console).
+### Project Purpose and Value
+- The app helps users plan events faster by combining event creation with context-aware suggestions.
+- Instead of manually checking weather, holidays, venues, or entertainment options, the user gets that context inside one planning flow.
 
-#### Server
-You must have node.js running on your machine. Once you have cloned this project you can run `npm install` to install all the packages for this project. Then running `npm run dev` will run the dev version of this code, which will run this project with nodemon. Nodemon auto-restarts the node server every time you make a change to a file. This is very helpful when you are writing and testing code.
+### Feature Showcase and Demo
+- Log in or register.
+- Create an event.
+- Fetch suggested cards based on date and location.
+- Attach or remove cards.
+- Save the event and see it appear on the dashboard.
+- Open an event again, make changes, and export it as `.ics`.
 
-##### .env and Postgres Installation
+### Roadmap and Presentation
+- Add stronger calendar syncing.
+- Improve search and filtering for cards.
+- Add richer user settings and profile management.
+- Expand recommendation logic so suggestions feel more personalized.
 
-A Postgres instance may have been provided to you. Your username for the database is your 6 character alphanumeric lehigh id. Your password for the database is your 6 character alphanumeric lehigh id followed by '_lehigh'.
+### Peer Communication
+- The app is designed to be understandable to non-technical users.
+- The main idea is simple: create an event, get helpful context, save it, and export it when ready.
 
-You will need to create a .env from the .env.example You can do this by running this line of code in your terminal 
+## Technical Walkthrough Notes
+- Authentication is handled through a custom context and persisted session data.
+- The dashboard loads user-specific events from the API.
+- The event builder sends create and update requests to the backend.
+- External services are queried on the client side and normalized into cards before being attached to an event.
+- Premium access is enforced in the UI by showing extra integrations only when the user is upgraded.
 
-`cp .env.example .env`
+## Implementation Details
 
-Then store your Database credentials in your .env file.
+### Why the backend uses separate SQL tables for auth, events, and config
+- The project uses three existing PostgreSQL tables as lightweight storage layers for different concerns:
+  - `reviews_del226` for users and passwords
+  - `applicationtracker_del226` for events
+  - `films_del226` for per-user configuration
+- This choice keeps the backend simple while still satisfying the database requirement.
+- Auth is intentionally mocked rather than fully secure production auth, because the goal of the project is to demonstrate full-stack data flow, role-based behavior, and persistence.
+- User configuration is stored separately from the core user record so the app can update tier/integration settings without rewriting the user row.
+- The config table uses a sentinel key format like `__config__:{userId}` so each user gets one JSON config row.
 
-**Note: Never EVER push private information (like credentials) to a Git Repo. We use .env to store this connection information and ensure that git (using .gitignore) never pushes this private information in the repo. Never ever store real credentials in .env.example or anywhere that is not .env as you may push these changes to your git repo.**
+### Why TypeScript is used
+- TypeScript gives the project shared data shapes across the client and server.
+- It helps keep the expected structures consistent for `User`, `EventDraft`, `Card`, and integration responses.
+- It reduces bugs when API payloads change, especially for event editing and external API adapters.
+- It also makes the project easier to explain because the interfaces document the shape of the data.
 
-### Grading
-* **Project Functionality** -- **30 points** -- Meets all outlined requirements
-* **Technical Implementation** -- **25 points** -- Clean code, database integration, API Usage
-* **UI/UX & Interactivity** -- **15 points** -- Well-designed, intuitive, and responsive UI
-* **Use of New Tech** -- **10 points** -- Implements a library/framework not covered in class
-* **Project Documentation** -- **10 points** -- Clear README, installation guide, and API setup
-* **Presentation & Demo** -- **10 points** -- Engaging, clear explanation, and live demo
+### Expected API shapes
+- On the client, these response shapes are merged into the `User` and `EventDraft` types so the UI always works with a predictable structure.
 
-**If code doesn't run/compile you can get no more than a 60. But please write comments and a README to explain what you were trying to do.**
+| Endpoint | Purpose | Sample description | Sample output |
+| --- | --- | --- | --- |
+| `POST /users/login` | Authenticate a user | Returns the base user record after a successful login. | `{ "id": "12", "username": "demoUser", "createdAt": "2026-04-14T18:00:00.000Z" }` |
+| `GET /config?userId=...` | Load saved user settings | Returns the stored role, tier, and enabled integrations for that user. | `{ "role": "user", "tier": "premium", "enabledIntegrations": ["weather", "holidays", "location", "nba", "nfl", "mlb", "movies"] }` |
+| `GET /events?userId=...` | Load a user’s events | Returns event drafts mapped into client-friendly fields such as title, date, and attached cards. | `{ "id": "45", "userId": "12", "title": "Birthday Dinner", "date": "2026-05-02", "location": "Bethlehem, PA", "attachedCards": [] }` |
+| `POST /events` and `PUT /events/:eventId` | Save an event draft | Accepts the full event draft payload and stores the extra event details inside the `notes` JSON column. | Request body example: `{ "userId": "12", "title": "Birthday Dinner", "date": "2026-05-02", "time": "7:00 PM", "location": "Bethlehem, PA", "notes": "Bring dessert" }` |
+
+**Sample description:** The frontend sends a login request, receives the base user object, fetches the user config from `/config`, and then combines those values into one `User` state object for the session.
+
+**Sample output:** After login, the dashboard can use the merged session state to show premium-only integrations when `tier` is `premium`, and the event builder can load and save event drafts with the user id already attached.
+
+### Why the API URL is configured through environment variables
+- The client reads the backend base URL from `VITE_API_URL`.
+- This makes it easy to switch between local development and a deployed backend without changing application code.
+- The app imports the API base once and reuses it in each fetch call, which keeps the code consistent and easy to maintain.
+
+### Client-side data flow
+- `AuthProvider` loads the session from `localStorage` and rehydrates the signed-in user on refresh.
+- Login fetches the base user object from the backend, then fetches `/config` and merges the results into one user state object.
+- Registration creates the user, writes default config for that user, and then immediately logs the user in.
+- Upgrading to premium updates the config endpoint and then updates the local session state.
+- The dashboard requests only the current user’s events and renders them as editable cards.
+- The event builder can save a new event or update an existing one depending on whether an event id already exists.
+
+### External data normalization
+- External APIs do not return the same shape, so the client converts each source into a common card model.
+- Weather, holidays, locations, sports, and movie results are all adapted into the same `Card` format before they are shown in the UI.
+- That normalization is what makes the UI flexible, because the event builder can render one consistent card component regardless of source.
+
+### Why the project is structured this way
+- The backend focuses on persistence and CRUD operations.
+- The client focuses on interaction, display, and data enrichment.
+- This split makes the app easier to demo because the technical story is clear: the backend stores records, the frontend turns them into a usable event-planning workflow.
+
+## API Keys & Database Setup
+- **Server `.env`**
+  - `POSTGRES_USERNAME`
+  - `POSTGRES_PASSWORD`
+  - `POSTGRES_HOST=cse264.cru8ico68j35.us-east-1.rds.amazonaws.com`
+  - `POSTGRES_PORT=5432`
+  - `POSTGRES_DBNAME=cse264`
+  - `PORT=3000`
+
+- **Client `.env`**
+  - `VITE_API_URL=http://localhost:3000`
+
+- The current code uses public APIs and does not require a third-party API key file for the integrations currently in the app.
