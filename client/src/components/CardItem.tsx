@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { Card, CardType, CardPriority } from '../event_types/card';
 
+// Background and border color for each card type
 const TYPE_COLORS: Record<CardType, string> = {
   weather: 'bg-sky-50 border-sky-200',
   nba: 'bg-amber-50 border-amber-200',
@@ -27,6 +28,7 @@ const TYPE_COLORS: Record<CardType, string> = {
   export: 'bg-gray-50 border-gray-200',
 };
 
+// Icon background and text color for each badge type
 const TYPE_BADGE: Record<CardType, string> = {
   weather: 'bg-sky-100 text-sky-700',
   nba: 'bg-amber-100 text-amber-700',
@@ -38,6 +40,7 @@ const TYPE_BADGE: Record<CardType, string> = {
   export: 'bg-gray-100 text-gray-700',
 };
 
+// Badge color for each priority level
 const PRIORITY_BADGE: Record<CardPriority, string> = {
   info: 'bg-blue-100 text-blue-700',
   warning: 'bg-orange-100 text-orange-700',
@@ -45,8 +48,10 @@ const PRIORITY_BADGE: Record<CardPriority, string> = {
   critical: 'bg-red-100 text-red-700',
 };
 
+// Render based on the card's icon string or type fallback
 function CardIcon({ icon, type }: { icon: string | null; type: CardType }) {
   const cls = 'w-5 h-5';
+  // Specific icon overrides
   if (icon === 'cloud-rain') return <CloudRain className={cls} />;
   if (icon === 'sun') return <Sun className={cls} />;
   if (icon === 'alert-triangle') return <AlertTriangle className={cls} />;
@@ -54,6 +59,7 @@ function CardIcon({ icon, type }: { icon: string | null; type: CardType }) {
   if (icon === 'film') return <Film className={cls} />;
   if (icon === 'calendar') return <Calendar className={cls} />;
   if (icon === 'map-pin') return <MapPin className={cls} />;
+  // Fallback icons based on card type
   if (type === 'weather') return <Cloud className={cls} />;
   if (type === 'nba') return <Trophy className={cls} />;
   if (type === 'nfl') return <Trophy className={cls} />;
@@ -61,9 +67,11 @@ function CardIcon({ icon, type }: { icon: string | null; type: CardType }) {
   if (type === 'movie') return <Film className={cls} />;
   if (type === 'holiday') return <Calendar className={cls} />;
   if (type === 'location') return <MapPin className={cls} />;
+  // Default fallback icon
   return <Info className={cls} />;
 }
 
+// Render based on the priority level
 function PriorityIcon({ priority }: { priority: CardPriority }) {
   const cls = 'w-3.5 h-3.5';
   if (priority === 'warning') return <AlertTriangle className={cls} />;
@@ -72,6 +80,7 @@ function PriorityIcon({ priority }: { priority: CardPriority }) {
   return <Info className={cls} />;
 }
 
+// Props for the CardItem component
 interface CardItemProps {
   card: Card;
   onAttach?: (card: Card) => void;
@@ -80,6 +89,7 @@ interface CardItemProps {
   compact?: boolean;
 }
 
+// Main component
 export function CardItem({ card, onAttach, onDetach, attached, compact }: CardItemProps) {
   const colorClass = TYPE_COLORS[card.type];
   const badgeClass = TYPE_BADGE[card.type];
