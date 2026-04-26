@@ -11,7 +11,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../auth/Auth';
 import { fetchCardsForEvent } from '../lib/cards';
+import { searchCardsBySource, type CardSearchSource } from '../lib/cardSearch';
 import { downloadICS, copyEventDetails } from '../lib/export';
+import { formatNominatimAddress, reverseGeocode } from '../lib/apis/location';
 import { CardItem } from '../components/CardItem';
 import type { EventDraft, EventCategory } from '../event_types/event';
 import type { Card, CardType } from '../event_types/card';
@@ -24,11 +26,49 @@ const CATEGORIES: EventCategory[] = [
 const CARD_TYPES: { type: CardType | 'all'; label: string }[] = [
   { type: 'all', label: 'All' },
   { type: 'weather', label: 'Weather' },
-  { type: 'sports', label: 'Sports' },
+  { type: 'nba', label: 'NBA' },
+  { type: 'nfl', label: 'NFL' },
+  { type: 'mlb', label: 'MLB' },
   { type: 'movie', label: 'Movies' },
   { type: 'holiday', label: 'Holidays' },
   { type: 'location', label: 'Venues' },
 ];
+
+const SEARCH_SOURCES: { type: CardSearchSource; label: string; premiumOnly?: boolean }[] = [
+  { type: 'weather', label: 'Weather' },
+  { type: 'location', label: 'Venues' },
+  { type: 'holiday', label: 'Holidays' },
+  { type: 'nba', label: 'NBA', premiumOnly: true },
+  { type: 'nfl', label: 'NFL', premiumOnly: true },
+  { type: 'mlb', label: 'MLB', premiumOnly: true },
+  { type: 'movie', label: 'Movies', premiumOnly: true },
+];
+
+const formatBrowserLocation = (label: string | null | undefined, fallback = 'Current location') => {
+  if (!label) return fallback;
+  return label;
+};
+
+const resolveBrowserLocation = async (): Promise<string | null> => {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return null;
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const place = await reverseGeocode(position.coords.latitude, position.coords.longitude);
+          const formatted = formatNominatimAddress(place);
+
+          resolve(formatBrowserLocation(formatted, 'Current location'));
+        } catch {
+          resolve(formatBrowserLocation(null, 'Current location'));
+        }
+      },
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+    );
+  });
+};
 
 interface EventBuilderProps {
   initialEvent?: EventDraft | null;
@@ -50,6 +90,11 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [filterType, setFilterType] = useState<CardType | 'all'>('all');
+  const [searchSource, setSearchSource] = useState<CardSearchSource>('weather');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<Card[]>([]);
   const [eventId, setEventId] = useState<string | null>(initialEvent?.id ?? null);
 
   const isPremium = user?.tier === 'premium';
@@ -57,6 +102,17 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
   const filteredSuggested = filterType === 'all'
     ? suggestedCards
     : suggestedCards.filter((c) => c.type === filterType);
+
+  const availableSearchSources = SEARCH_SOURCES.filter(
+    ({ premiumOnly }) => !premiumOnly || isPremium
+  );
+
+  useEffect(() => {
+    if (!availableSearchSources.some(({ type }) => type === searchSource)) {
+      setSearchSource(availableSearchSources[0]?.type ?? 'weather');
+    }
+  }, [availableSearchSources, searchSource]);
+
   const handleSave = async () => {
     if (!user) return;
     const draft = buildEvent();
@@ -91,7 +147,16 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
     setFetching(true);
     setFetchError(null);
     try {
-      const cards = await fetchCardsForEvent({ date, time, location }, user);
+      let effectiveLocation = location.trim();
+      if (!effectiveLocation) {
+        const browserLocation = await resolveBrowserLocation();
+        if (browserLocation) {
+          effectiveLocation = browserLocation;
+          setLocation(browserLocation);
+        }
+      }
+
+      const cards = await fetchCardsForEvent({ date, time, location: effectiveLocation }, user);
       setSuggestedCards(cards);
       if (cards.length === 0) setFetchError('No cards returned. Try adding a location or date.');
     } catch {
@@ -100,6 +165,57 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
       setFetching(false);
     }
   }, [user, date, time, location]);
+
+  const getEmptySearchSuggestions = useCallback(async () => {
+    if (!user) return [];
+
+    const results: Card[] = [];
+    const baseLocation = location.trim() || await resolveBrowserLocation();
+
+    if (baseLocation) {
+      results.push(...await searchCardsBySource('weather', baseLocation, user));
+      results.push(...await searchCardsBySource('location', baseLocation, user));
+    }
+
+    results.push(...await searchCardsBySource('holiday', '', user));
+
+    if (isPremium) {
+      results.push(...await searchCardsBySource('nba', '', user));
+      results.push(...await searchCardsBySource('nfl', '', user));
+      results.push(...await searchCardsBySource('mlb', '', user));
+      results.push(...await searchCardsBySource('movie', '', user));
+    }
+
+    const seen = new Set<string>();
+    return results.filter((card) => {
+      const key = `${card.type}:${card.title}:${card.subtitle}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [user, location, isPremium]);
+
+  const handleSearch = useCallback(async () => {
+    if (!user) return;
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const trimmedQuery = searchQuery.trim();
+      const results = trimmedQuery
+        ? await searchCardsBySource(searchSource, searchQuery, user)
+        : await getEmptySearchSuggestions();
+      setSearchResults(results);
+      if (results.length === 0) {
+        setSearchError(trimmedQuery
+          ? 'No cards matched that search. Try a different keyword or location.'
+          : 'No default suggestions available yet. Try entering a location or search term.');
+      }
+    } catch {
+      setSearchError('Search failed. Check your connection and try again.');
+    } finally {
+      setSearching(false);
+    }
+  }, [user, searchSource, searchQuery, getEmptySearchSuggestions]);
 
   const handleAttach = (card: Card) => {
     if (attachedCards.find((c) => c.id === card.id)) return;
@@ -213,7 +329,7 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
                     type="text"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    placeholder="Bethlehem, PA"
+                    placeholder="Enter a Location"
                     className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition"
                   />
                 </div>
@@ -295,6 +411,78 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
 
           <div className="lg:col-span-3">
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <div className="mb-5 rounded-2xl border border-gray-100 bg-gray-50/70 p-4">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">Search API Cards</h3>
+                    <p className="text-xs text-gray-500">
+                      Search one API at a time and translate the results into your card format.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-[150px_1fr_auto] gap-2">
+                  <select
+                    value={searchSource}
+                    onChange={(e) => setSearchSource(e.target.value as CardSearchSource)}
+                    className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition bg-white"
+                  >
+                    {availableSearchSources.map(({ type, label }) => (
+                      <option key={type} value={type}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSearch();
+                      }
+                    }}
+                    placeholder={
+                      searchSource === 'weather'
+                        ? 'Search a city or place'
+                        : searchSource === 'location'
+                          ? 'Search a venue, city, or address'
+                          : searchSource === 'nba'
+                            ? 'Search an NBA team'
+                            : searchSource === 'nfl'
+                              ? 'Search an NFL team'
+                              : searchSource === 'mlb'
+                                ? 'Search an MLB team'
+                                : searchSource === 'movie'
+                                  ? 'Search a movie, director, or actor'
+                                  : 'Search a holiday or year'
+                    }
+                    className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition"
+                  />
+
+                  <button
+                    onClick={handleSearch}
+                    disabled={searching}
+                    className="flex items-center justify-center gap-2 bg-linear-to-r from-orange-400 to-red-500 text-white font-semibold px-4 py-2.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-60"
+                  >
+                    {searching ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-4 h-4" />
+                    )}
+                    {searching ? 'Searching...' : 'Search'}
+                  </button>
+                </div>
+
+                {searchError && (
+                  <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    {searchError}
+                  </p>
+                )}
+              </div>
+
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-bold text-gray-900">
                   Suggested Cards
@@ -307,7 +495,7 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
                 {!isPremium && (
                   <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
                     <Crown className="w-2.5 h-2.5" />
-                    Upgrade for sports & movies
+                    Upgrade for leagues & movies
                   </span>
                 )}
               </div>
@@ -351,6 +539,32 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
                 <div className="py-16 text-center">
                   <Loader2 className="w-8 h-8 animate-spin text-orange-400 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">Fetching insights...</p>
+                </div>
+              )}
+
+              {searchResults.length > 0 && (
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                      Search Results
+                    </h3>
+                    <button
+                      onClick={() => setSearchResults([])}
+                      className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-150 overflow-y-auto pr-1">
+                    {searchResults.map((card) => (
+                      <CardItem
+                        key={card.id}
+                        card={card}
+                        onAttach={handleAttach}
+                        attached={!!attachedCards.find((c) => c.id === card.id)}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
 
