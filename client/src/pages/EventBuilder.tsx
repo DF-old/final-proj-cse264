@@ -1,0 +1,375 @@
+import { useState, useEffect, useCallback } from 'react';
+import {
+  ArrowLeft,
+  Sparkles,
+  Save,
+  Download,
+  Copy,
+  Check,
+  Loader2,
+  Crown,
+} from 'lucide-react';
+import { useAuth } from '../auth/Auth';
+import { fetchCardsForEvent } from '../lib/cards';
+import { downloadICS, copyEventDetails } from '../lib/export';
+import { CardItem } from '../components/CardItem';
+import type { EventDraft, EventCategory } from '../event_types/event';
+import type { Card, CardType } from '../event_types/card';
+import API from '../lib/server';
+
+const CATEGORIES: EventCategory[] = [
+  'Meeting', 'Party', 'Sports', 'Movie Night', 'Outdoor', 'Travel', 'Birthday', 'Other',
+];
+
+const CARD_TYPES: { type: CardType | 'all'; label: string }[] = [
+  { type: 'all', label: 'All' },
+  { type: 'weather', label: 'Weather' },
+  { type: 'sports', label: 'Sports' },
+  { type: 'movie', label: 'Movies' },
+  { type: 'holiday', label: 'Holidays' },
+  { type: 'location', label: 'Venues' },
+];
+
+interface EventBuilderProps {
+  initialEvent?: EventDraft | null;
+  onNavigate: (page: string) => void;
+}
+
+export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
+  const { user } = useAuth();
+  const [title, setTitle] = useState(initialEvent?.title ?? '');
+  const [date, setDate] = useState(initialEvent?.date ?? '');
+  const [time, setTime] = useState(initialEvent?.time ?? '');
+  const [location, setLocation] = useState(initialEvent?.location ?? '');
+  const [notes, setNotes] = useState(initialEvent?.notes ?? '');
+  const [category, setCategory] = useState<EventCategory>(initialEvent?.category ?? 'Meeting');
+  const [attachedCards, setAttachedCards] = useState<Card[]>(initialEvent?.attachedCards ?? []);
+  const [suggestedCards, setSuggestedCards] = useState<Card[]>([]);
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [filterType, setFilterType] = useState<CardType | 'all'>('all');
+  const [eventId, setEventId] = useState<string | null>(initialEvent?.id ?? null);
+
+  const isPremium = user?.tier === 'premium';
+
+  const filteredSuggested = filterType === 'all'
+    ? suggestedCards
+    : suggestedCards.filter((c) => c.type === filterType);
+  const handleSave = async () => {
+    if (!user) return;
+    const draft = buildEvent();
+    try {
+      if (eventId) {
+        // existing event — update
+        await fetch(`${API}/events/${eventId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, ...draft }),
+        });
+      } else {
+        // new event — create and capture the returned id
+        const res = await fetch(`${API}/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, ...draft }),
+        });
+        const data = await res.json();
+        if (data.id) setEventId(data.id);
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      window.alert('Failed to save event. Check your connection and try again.');
+    }
+  };
+
+
+  const handleFetch = useCallback(async () => {
+    if (!user) return;
+    setFetching(true);
+    setFetchError(null);
+    try {
+      const cards = await fetchCardsForEvent({ date, time, location }, user);
+      setSuggestedCards(cards);
+      if (cards.length === 0) setFetchError('No cards returned. Try adding a location or date.');
+    } catch {
+      setFetchError('Failed to fetch cards. Check your connection and try again.');
+    } finally {
+      setFetching(false);
+    }
+  }, [user, date, time, location]);
+
+  const handleAttach = (card: Card) => {
+    if (attachedCards.find((c) => c.id === card.id)) return;
+    setAttachedCards((prev) => [...prev, card]);
+  };
+
+  const handleDetach = (card: Card) => {
+    setAttachedCards((prev) => prev.filter((c) => c.id !== card.id));
+  };
+
+  const buildEvent = (): EventDraft => ({
+    id: eventId ?? '',
+    title: title || 'Untitled Event',
+    date,
+    time,
+    location,
+    notes,
+    category,
+    attachedCards,
+    createdAt: initialEvent?.createdAt ?? new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const handleDownloadICS = () => {
+    downloadICS(buildEvent());
+  };
+
+  const handleCopy = async () => {
+    const text = copyEventDetails(buildEvent());
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#FAF8F5]">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+        <div className="flex items-center gap-3 mb-6">
+          <button
+            onClick={() => onNavigate('dashboard')}
+            className="p-2 rounded-xl bg-white border border-gray-200 hover:border-gray-300 text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <h1 className="text-lg font-bold text-gray-900 truncate">
+            {title || 'New Event'}
+          </h1>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <div className="lg:col-span-2 flex flex-col gap-4">
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col gap-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                    Event Title
+                  </label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="My awesome event"
+                    className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition"
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                    Category
+                  </label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value as EventCategory)}
+                    className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition bg-white"
+                  >
+                    {CATEGORIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                    Time
+                  </label>
+                  <input
+                    type="time"
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition"
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                    Location
+                  </label>
+                  <input
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="Bethlehem, PA"
+                    className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition"
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                    Notes
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Any extra details..."
+                    rows={3}
+                    className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleFetch}
+                  disabled={fetching}
+                  className="flex-1 flex items-center justify-center gap-2 bg-linear-to-r from-orange-400 to-red-500 text-white font-semibold py-2.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-60"
+                >
+                  {fetching ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  {fetching ? 'Fetching...' : 'Fetch Cards'}
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="flex items-center gap-1.5 border border-gray-200 bg-white text-gray-700 font-semibold px-3.5 py-2.5 rounded-xl hover:border-gray-300 transition-colors"
+                >
+                  {saved ? <Check className="w-4 h-4 text-green-500" /> : <Save className="w-4 h-4" />}
+                  {saved ? 'Saved' : 'Save Draft'}
+                </button>
+              </div>
+
+              {fetchError && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  {fetchError}
+                </p>
+              )}
+            </div>
+
+            {attachedCards.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-bold text-gray-900">
+                    Attached Cards ({attachedCards.length})
+                  </h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleDownloadICS}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 border border-gray-200 bg-white px-2.5 py-1.5 rounded-lg hover:border-gray-300 transition-colors"
+                    >
+                      <Download className="w-3 h-3" />
+                      .ics
+                    </button>
+                    <button
+                      onClick={handleCopy}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 border border-gray-200 bg-white px-2.5 py-1.5 rounded-lg hover:border-gray-300 transition-colors"
+                    >
+                      {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                      {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-3 max-h-96 overflow-y-auto pr-1">
+                  {attachedCards.map((card) => (
+                    <CardItem key={card.id} card={card} onDetach={handleDetach} attached />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="lg:col-span-3">
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-bold text-gray-900">
+                  Suggested Cards
+                  {suggestedCards.length > 0 && (
+                    <span className="ml-2 text-xs font-normal text-gray-400">
+                      ({filteredSuggested.length} shown)
+                    </span>
+                  )}
+                </h2>
+                {!isPremium && (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                    <Crown className="w-2.5 h-2.5" />
+                    Upgrade for sports & movies
+                  </span>
+                )}
+              </div>
+
+              {suggestedCards.length > 0 && (
+                <div className="flex gap-1.5 flex-wrap mb-4">
+                  {CARD_TYPES.map(({ type, label }) => {
+                    const count = type === 'all'
+                      ? suggestedCards.length
+                      : suggestedCards.filter((c) => c.type === type).length;
+                    if (count === 0 && type !== 'all') return null;
+                    return (
+                      <button
+                        key={type}
+                        onClick={() => setFilterType(type)}
+                        className={`text-xs font-semibold px-3 py-1 rounded-full transition-colors ${filterType === type
+                            ? 'bg-orange-500 text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                      >
+                        {label} {count > 0 && <span className="opacity-70">({count})</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {suggestedCards.length === 0 && !fetching && (
+                <div className="py-16 text-center">
+                  <div className="w-12 h-12 bg-orange-50 border border-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                    <Sparkles className="w-6 h-6 text-orange-400" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-700 mb-1">No cards yet</p>
+                  <p className="text-xs text-gray-400 max-w-xs mx-auto">
+                    Fill in a date and location, then click Fetch Cards to get weather, holiday, and venue info.
+                  </p>
+                </div>
+              )}
+
+              {fetching && (
+                <div className="py-16 text-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-orange-400 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">Fetching insights...</p>
+                </div>
+              )}
+
+              {filteredSuggested.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-150 overflow-y-auto pr-1">
+                  {filteredSuggested.map((card) => (
+                    <CardItem
+                      key={card.id}
+                      card={card}
+                      onAttach={handleAttach}
+                      attached={!!attachedCards.find((c) => c.id === card.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
