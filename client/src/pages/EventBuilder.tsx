@@ -108,6 +108,8 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
   );
 
   useEffect(() => {
+    // If the user downgrades or logs in without premium, keep the selected
+    // search source valid by falling back to an allowed option.
     if (!availableSearchSources.some(({ type }) => type === searchSource)) {
       setSearchSource(availableSearchSources[0]?.type ?? 'weather');
     }
@@ -118,14 +120,16 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
     const draft = buildEvent();
     try {
       if (eventId) {
-        // existing event — update
+        // Existing event ids mean this is an edit, so the backend should
+        // replace the stored draft instead of creating a duplicate record.
         await fetch(`${API}/events/${eventId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: user.id, ...draft }),
         });
       } else {
-        // new event — create and capture the returned id
+        // New events are created first so the server can assign an id that the
+        // client can reuse for later edits.
         const res = await fetch(`${API}/events`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -149,6 +153,8 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
     try {
       let effectiveLocation = location.trim();
       if (!effectiveLocation) {
+        // If the user leaves location blank, try to use browser geolocation so
+        // the enrichment flow still has enough context to produce useful cards.
         const browserLocation = await resolveBrowserLocation();
         if (browserLocation) {
           effectiveLocation = browserLocation;
@@ -172,6 +178,8 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
     const results: Card[] = [];
     const baseLocation = location.trim() || await resolveBrowserLocation();
 
+    // Empty search is treated as a "suggest something useful" mode rather than
+    // a no-op, so the UI can offer cards even before the user types a query.
     if (baseLocation) {
       results.push(...await searchCardsBySource('weather', baseLocation, user));
       results.push(...await searchCardsBySource('location', baseLocation, user));
@@ -187,6 +195,8 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
     }
 
     const seen = new Set<string>();
+    // Deduplicate by the visible content so repeated API sources do not flood
+    // the search results with near-identical cards.
     return results.filter((card) => {
       const key = `${card.type}:${card.title}:${card.subtitle}`;
       if (seen.has(key)) return false;
@@ -240,10 +250,13 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
   });
 
   const handleDownloadICS = () => {
+    // Export uses the same normalized draft object that is saved to the API.
     downloadICS(buildEvent());
   };
 
   const handleCopy = async () => {
+    // Copying the event text gives the user a quick shareable version without
+    // needing to leave the app.
     const text = copyEventDetails(buildEvent());
     await navigator.clipboard.writeText(text);
     setCopied(true);
