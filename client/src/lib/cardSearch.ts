@@ -1,15 +1,12 @@
-// contains the main search logic for fetching and adapting data from various APIs into a unified Card format.
 import type { Card } from '../event_types/card';
 import type { User } from '../event_types/user';
 
-// serves as the central hub for all card search functionality
 import { geocodeLocations, fetchOpenMeteoForecast, fetchNWSForecast } from './apis/weather';
 import { fetchScoreboard, findEventsForTeam, type SportLeague } from './apis/sports';
 import { searchMovies } from './apis/movies';
 import { fetchPublicHolidays } from './apis/holidays';
 import { searchLocation } from './apis/location';
 
-// adapter functions convert raw API responses into the Card format expected by the planner UI
 import { adaptOpenMeteoToCards, adaptNWSToCards } from './adapters/weatherAdapter';
 import { adaptTeamMatchesToCards } from './adapters/sportsAdapter';
 import { adaptMoviesToCards } from './adapters/movieAdapter';
