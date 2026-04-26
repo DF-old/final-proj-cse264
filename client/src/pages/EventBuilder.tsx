@@ -427,9 +427,9 @@ export function EventBuilder({ initialEvent, onNavigate }: EventBuilderProps) {
               <div className="mb-5 rounded-2xl border border-gray-100 bg-gray-50/70 p-4">
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div>
-                    <h3 className="text-sm font-bold text-gray-900">Search API Cards</h3>
+                    <h3 className="text-sm font-bold text-gray-900">Search Cards</h3>
                     <p className="text-xs text-gray-500">
-                      Search one API at a time and translate the results into your card format.
+                      Search manually for cards
                     </p>
                   </div>
                 </div>
