@@ -6,6 +6,7 @@ interface Props {
   currentPage: string;
 }
 
+// Renders if the user is signed in
 export function Navbar({ onNavigate, currentPage }: Props) {
   const { user, isAuthenticated, logout } = useAuth();
 
