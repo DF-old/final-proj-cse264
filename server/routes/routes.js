@@ -286,14 +286,15 @@ const configRoutes = (app) => {
 const mapEventRow = (row) => {
   let extras = {};
   try { extras = JSON.parse(row.notes || '{}'); } catch { /* ignore */ }
-  // The client works with a normalized event draft, so the server unwraps the
-  // JSON blob and returns a flatter object.
+  // Strip id from the stored JSON so the client-sent draft id (which is ''
+  // for new events) can never overwrite the real database-assigned id.
+  const { id: _discardId, ...safeExtras } = extras;
   return {
     id: String(row.id),
     userId: row.company,
     title: row.position,
     date: row.applied_on ? new Date(row.applied_on).toISOString().split('T')[0] : null,
-    ...extras,
+    ...safeExtras,
   };
 };
 
